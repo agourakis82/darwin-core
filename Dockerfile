@@ -1,0 +1,103 @@
+# Darwin Core 2025 - Multi-stage Production Dockerfile
+# Otimizado para: RAG++, KEC 3.0, Agentic Workflows, MCP Server
+# Target image size: <1GB (com CPU-only PyTorch)
+
+# ============================================
+# Stage 1: Build gRPC Protos
+# ============================================
+FROM python:3.11-slim as proto-builder
+
+RUN pip install --no-cache-dir grpcio-tools==1.60.0 protobuf==4.25.2
+
+WORKDIR /build
+
+# Copy proto files
+COPY protos/ ./protos/
+
+# Generate Python code from protos
+RUN mkdir -p app/protos && \
+    python3 -m grpc_tools.protoc \
+    -I./protos \
+    --python_out=./app/protos \
+    --grpc_python_out=./app/protos \
+    --pyi_out=./app/protos \
+    protos/kec/v1/kec.proto \
+    protos/plugin/v1/plugin.proto \
+    protos/events/v1/events.proto || true
+
+# ============================================
+# Stage 2: Build Python Dependencies
+# ============================================
+FROM python:3.11-slim as deps-builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    make \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Copy requirements
+COPY requirements-prod.txt .
+
+# Install dependencies to user directory (cache-friendly)
+RUN pip install --user --no-cache-dir --no-warn-script-location \
+    -r requirements-prod.txt
+
+# ============================================
+# Stage 3: Runtime Image
+# ============================================
+FROM python:3.11-slim
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    ca-certificates \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Create non-root user
+RUN useradd -m -u 1000 darwin && \
+    mkdir -p /app /data /cache && \
+    chown -R darwin:darwin /app /data /cache
+
+WORKDIR /app
+
+# Copy Python dependencies from builder
+COPY --from=deps-builder --chown=darwin:darwin /root/.local /home/darwin/.local
+
+# Create protos directory and copy if exists
+RUN mkdir -p ./app/protos
+
+# Copy application code
+COPY --chown=darwin:darwin app/ ./app/
+
+# Try to copy generated protos (will be empty if proto build failed)
+COPY --from=proto-builder /build/app/protos/ ./app/protos/
+
+# Switch to non-root user
+USER darwin
+
+# Add local bin to PATH
+ENV PATH=/home/darwin/.local/bin:$PATH \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app
+
+# Expose ports
+# 8000: FastAPI HTTP
+# 8001: MCP Server (se separado)
+# 50051: gRPC
+EXPOSE 8000 8001 50051
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Default command (pode ser sobrescrito)
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--log-level", "info"]
+

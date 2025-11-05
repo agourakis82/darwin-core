@@ -1,0 +1,100 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "darwin-core"
+version = "2.0.0"
+description = "Darwin AI Platform - RAG++, Multi-AI Orchestration, Knowledge Graphs"
+readme = "README.md"
+authors = [
+    {name = "Dr. Demetrios Agourakis", email = "agourakis@agourakis.med.br"}
+]
+license = {text = "MIT"}
+requires-python = ">=3.9"
+keywords = [
+    "ai", "rag", "knowledge-graph", "multi-ai", "llm", "graphrag", "self-rag",
+    "semantic-memory", "vector-database", "embedding", "biomaterials", "drug-discovery"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn>=0.24.0",
+    "pydantic>=2.0.0",
+    "qdrant-client>=1.7.0",
+    "transformers>=4.35.0",
+    "sentence-transformers>=2.2.0",
+    "torch>=2.0.0",
+    "numpy>=1.24.0,<2.0.0",
+    "networkx>=3.0",
+    "langchain>=0.1.0",
+    "langchain-openai>=0.0.5",
+    "langchain-anthropic>=0.1.0",
+    "openai>=1.0.0",
+    "anthropic>=0.7.0",
+    "redis>=5.0.0",
+    "aioredis>=2.0.0",
+    "grpcio>=1.59.0",
+    "grpcio-tools>=1.59.0",
+    "apache-pulsar-client>=3.3.0",
+    "protobuf>=4.25.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "black>=23.10.0",
+    "flake8>=6.1.0",
+    "mypy>=1.6.0",
+]
+neuro = [
+    "mne>=1.5.0",
+    "scipy>=1.11.0",
+    "scikit-learn>=1.3.0",
+]
+visual = [
+    "pillow>=10.0.0",
+    "opencv-python>=4.8.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/agourakis82/darwin-core"
+Documentation = "https://github.com/agourakis82/darwin-core#readme"
+Repository = "https://github.com/agourakis82/darwin-core"
+Issues = "https://github.com/agourakis82/darwin-core/issues"
+
+[tool.setuptools]
+packages = ["app"]
+
+[tool.setuptools.package-data]
+app = ["py.typed", "protos/*.proto"]
+
+[tool.black]
+line-length = 100
+target-version = ['py39', 'py310', 'py311']
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+

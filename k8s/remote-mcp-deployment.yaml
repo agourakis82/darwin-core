@@ -1,0 +1,209 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: darwin-remote-mcp-server
+  namespace: darwin
+  labels:
+    app: darwin-remote-mcp
+    component: mcp-server
+    version: v1.0.0
+spec:
+  replicas: 2  # HA for ChatGPT reliability
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: darwin-remote-mcp
+  template:
+    metadata:
+      labels:
+        app: darwin-remote-mcp
+        component: mcp-server
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8093"
+        prometheus.io/path: "/metrics"
+    spec:
+      # Temporarily run as root for package installation
+      securityContext:
+        runAsNonRoot: false
+        runAsUser: 0
+      
+      containers:
+      - name: remote-mcp-server
+        image: python:3.11-slim
+        imagePullPolicy: IfNotPresent
+        
+        # Install dependencies and run server
+        command: ["sh", "-c"]
+        args: 
+          - |
+            set -e
+            echo "🔧 Installing system dependencies..."
+            apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+            
+            echo "📦 Installing Python dependencies..."
+            pip install --no-cache-dir mcp aiohttp fastapi uvicorn
+            
+            echo "🚀 Starting DARWIN Remote MCP Server..."
+            python /app/darwin-remote-mcp-server.py
+        
+        volumeMounts:
+        - name: server-code
+          mountPath: /app
+        
+        ports:
+        - name: http
+          containerPort: 8093
+          protocol: TCP
+        
+        env:
+        # DARWIN API connection
+        - name: DARWIN_API_URL
+          value: "http://darwin-core:8090"
+        - name: DARWIN_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: darwin-api-secrets
+              key: mcp-token
+        
+        # Server configuration
+        - name: MCP_SERVER_HOST
+          value: "0.0.0.0"
+        - name: MCP_SERVER_PORT
+          value: "8093"
+        
+        # OAuth Configuration
+        - name: OAUTH_CLIENT_ID
+          value: "mcp-chatgpt-client"
+        - name: OAUTH_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: mcp-secrets
+              key: oauth-client-secret
+        - name: MCP_BASE_URL
+          value: "https://mcp.agourakis.med.br"
+        
+        # OpenTelemetry
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://jaeger-collector:4317"
+        - name: OTEL_SERVICE_NAME
+          value: "darwin-remote-mcp"
+        
+        # Resource limits (lighter than core)
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        
+        # Health checks - adjusted for installation time
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8093
+          initialDelaySeconds: 60  # Allow time for package installation
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 12  # 2 minutes total startup time
+        
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8093
+          initialDelaySeconds: 120  # Start after startup probe succeeds
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8093
+          initialDelaySeconds: 120  # Start after startup probe succeeds
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 2
+      
+      volumes:
+      - name: server-code
+        configMap:
+          name: darwin-remote-mcp-server-code
+          defaultMode: 0755
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: darwin-remote-mcp
+  namespace: darwin
+  labels:
+    app: darwin-remote-mcp
+    component: mcp-server
+spec:
+  type: ClusterIP
+  selector:
+    app: darwin-remote-mcp
+  ports:
+  - name: http
+    port: 8093
+    targetPort: 8093
+    protocol: TCP
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: darwin-remote-mcp-external
+  namespace: darwin
+  labels:
+    app: darwin-remote-mcp
+    component: mcp-server
+    exposure: external
+spec:
+  type: LoadBalancer  # For external access via Cloudflared
+  selector:
+    app: darwin-remote-mcp
+  ports:
+  - name: http
+    port: 8093
+    targetPort: 8093
+    protocol: TCP
+
+---
+# ConfigMap for MCP Server
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: darwin-remote-mcp-config
+  namespace: darwin
+  labels:
+    app: darwin-remote-mcp
+data:
+  server-config.yaml: |
+    service:
+      name: darwin-remote-mcp
+      version: 1.0.0
+    
+    mcp:
+      tools:
+        - search
+        - fetch
+      
+      # ChatGPT integration settings
+      chatgpt:
+        enabled: true
+        require_approval: "never"  # No approval needed for read-only operations
+        allowed_tools: ["search", "fetch"]
+    
+    # Connection to DARWIN Core
+    darwin:
+      api_url: "http://darwin-core:8090"
+      timeout: 30
+      retries: 3

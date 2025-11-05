@@ -1,0 +1,241 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: envoy-config
+  namespace: darwin
+data:
+  envoy.yaml: |
+    static_resources:
+      listeners:
+      # HTTP/3 + QUIC listener (external)
+      - name: listener_http3
+        address:
+          socket_address:
+            address: 0.0.0.0
+            port_value: 443
+            protocol: UDP  # QUIC uses UDP
+        
+        udp_listener_config:
+          quic_options: {}
+          downstream_socket_config:
+            prefer_gro: true
+        
+        filter_chains:
+        - filters:
+          - name: envoy.filters.network.http_connection_manager
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+              codec_type: HTTP3
+              stat_prefix: ingress_http3
+              
+              route_config:
+                name: local_route
+                virtual_hosts:
+                - name: backend
+                  domains: ["*"]
+                  routes:
+                  # Route to Core (HTTP/2 backend)
+                  - match:
+                      prefix: "/api/v1/"
+                    route:
+                      cluster: darwin_core
+                      timeout: 30s
+                  
+                  # Health check
+                  - match:
+                      prefix: "/health"
+                    route:
+                      cluster: darwin_core
+              
+              http_filters:
+              - name: envoy.filters.http.router
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+          
+          transport_socket:
+            name: envoy.transport_sockets.quic
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.quic.v3.QuicDownstreamTransport
+              downstream_tls_context:
+                common_tls_context:
+                  tls_certificates:
+                  - certificate_chain:
+                      filename: /etc/envoy/certs/tls.crt
+                    private_key:
+                      filename: /etc/envoy/certs/tls.key
+                  alpn_protocols:
+                  - h3  # HTTP/3
+      
+      # HTTP/2 fallback listener
+      - name: listener_http2
+        address:
+          socket_address:
+            address: 0.0.0.0
+            port_value: 8080
+            protocol: TCP
+        
+        filter_chains:
+        - filters:
+          - name: envoy.filters.network.http_connection_manager
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+              codec_type: HTTP2
+              stat_prefix: ingress_http2
+              
+              route_config:
+                name: local_route
+                virtual_hosts:
+                - name: backend
+                  domains: ["*"]
+                  routes:
+                  - match:
+                      prefix: "/"
+                    route:
+                      cluster: darwin_core
+              
+              http_filters:
+              - name: envoy.filters.http.router
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+      
+      clusters:
+      # Darwin Core backend (HTTP/2)
+      - name: darwin_core
+        connect_timeout: 5s
+        type: STRICT_DNS
+        lb_policy: ROUND_ROBIN
+        http2_protocol_options: {}  # Enable HTTP/2 to backend
+        
+        load_assignment:
+          cluster_name: darwin_core
+          endpoints:
+          - lb_endpoints:
+            - endpoint:
+                address:
+                  socket_address:
+                    address: darwin-core.darwin.svc.cluster.local
+                    port_value: 8090
+        
+        # Circuit breaking
+        circuit_breakers:
+          thresholds:
+          - priority: DEFAULT
+            max_connections: 1000
+            max_pending_requests: 1000
+            max_requests: 1000
+            max_retries: 3
+        
+        # Health checks
+        health_checks:
+        - timeout: 5s
+          interval: 30s
+          unhealthy_threshold: 3
+          healthy_threshold: 1
+          http_health_check:
+            path: /api/v1/health
+            expected_statuses:
+            - start: 200
+              end: 299
+    
+    admin:
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 9901
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: envoy-gateway
+  namespace: darwin
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: envoy-gateway
+  template:
+    metadata:
+      labels:
+        app: envoy-gateway
+    spec:
+      containers:
+      - name: envoy
+        image: envoyproxy/envoy:v1.28-latest
+        
+        command:
+        - envoy
+        args:
+        - -c
+        - /etc/envoy/envoy.yaml
+        - --log-level
+        - info
+        
+        ports:
+        - name: http3-quic
+          containerPort: 443
+          protocol: UDP
+        - name: http2
+          containerPort: 8080
+          protocol: TCP
+        - name: admin
+          containerPort: 9901
+          protocol: TCP
+        
+        volumeMounts:
+        - name: envoy-config
+          mountPath: /etc/envoy
+        - name: envoy-certs
+          mountPath: /etc/envoy/certs
+          readOnly: true
+        
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+      
+      volumes:
+      - name: envoy-config
+        configMap:
+          name: envoy-config
+      - name: envoy-certs
+        secret:
+          secretName: envoy-tls-cert
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: envoy-gateway
+  namespace: darwin
+spec:
+  type: LoadBalancer
+  selector:
+    app: envoy-gateway
+  ports:
+  - name: http3-quic
+    port: 443
+    targetPort: 443
+    protocol: UDP
+  - name: http2
+    port: 80
+    targetPort: 8080
+    protocol: TCP
+
+---
+# Self-signed cert for testing (replace with real cert in production)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: envoy-tls-cert
+  namespace: darwin
+type: kubernetes.io/tls
+data:
+  # Base64 encoded cert and key
+  # Generate with: openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes
+  tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCg==
+  tls.key: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCg==
+

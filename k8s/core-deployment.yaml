@@ -1,0 +1,215 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: darwin-core
+  namespace: darwin
+  labels:
+    app: darwin-core
+    component: core
+    version: v2.0.0
+spec:
+  replicas: 2  # HA with 2 replicas
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: darwin-core
+  template:
+    metadata:
+      labels:
+        app: darwin-core
+        component: core
+        version: v2.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8090"
+        prometheus.io/path: "/api/v1/metrics"
+    spec:
+      # Run as non-root
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      
+      containers:
+      - name: darwin-core
+        image: darwin-core:2.0.0
+        imagePullPolicy: IfNotPresent
+        
+        ports:
+        - name: http
+          containerPort: 8090
+          protocol: TCP
+        - name: grpc
+          containerPort: 50051
+          protocol: TCP
+        
+        env:
+        # ChromaDB connection
+        - name: CHROMA_HOST
+          value: "darwin-chromadb"
+        - name: CHROMA_PORT
+          value: "8000"
+        
+        # Pulsar connection
+        - name: PULSAR_URL
+          value: "pulsar://darwin-pulsar-broker:6650"
+        
+        # OpenTelemetry
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://jaeger-collector:4317"
+        - name: OTEL_SERVICE_NAME
+          value: "darwin-core"
+        
+        # Kubernetes namespace (for agentic layer)
+        - name: K8S_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        
+        # Resource limits
+        resources:
+          requests:
+            memory: "8Gi"
+            cpu: "2000m"
+          limits:
+            memory: "16Gi"
+            cpu: "4000m"
+        
+        # Liveness probe
+        livenessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: 8090
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        
+        # Readiness probe
+        readinessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: 8090
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 2
+        
+        # Startup probe (gives time for initialization)
+        startupProbe:
+          httpGet:
+            path: /api/v1/health
+            port: 8090
+          initialDelaySeconds: 0
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 12  # 60 seconds total
+        
+        # Volume mounts
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+      
+      # Service account (for K8s API access)
+      serviceAccountName: darwin-core-sa
+      
+      volumes:
+      - name: config
+        configMap:
+          name: darwin-core-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: darwin-core
+  namespace: darwin
+  labels:
+    app: darwin-core
+spec:
+  type: ClusterIP  # Internal only, use Ingress for external
+  selector:
+    app: darwin-core
+  ports:
+  - name: http
+    port: 8090
+    targetPort: 8090
+    protocol: TCP
+  - name: grpc
+    port: 50051
+    targetPort: 50051
+    protocol: TCP
+  sessionAffinity: ClientIP  # Sticky sessions
+
+---
+# Service Account for K8s API access (agentic layer)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: darwin-core-sa
+  namespace: darwin
+
+---
+# RBAC for self-healing
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: darwin-core-role
+  namespace: darwin
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["get", "list", "watch", "patch"]
+- apiGroups: ["autoscaling"]
+  resources: ["horizontalpodautoscalers"]
+  verbs: ["get", "list", "watch", "patch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: darwin-core-binding
+  namespace: darwin
+subjects:
+- kind: ServiceAccount
+  name: darwin-core-sa
+  namespace: darwin
+roleRef:
+  kind: Role
+  name: darwin-core-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: darwin-core-config
+  namespace: darwin
+data:
+  config.yaml: |
+    service:
+      name: darwin-core
+      version: 2.0.0
+    
+    plugins:
+      biomaterials:
+        url: darwin-plugin-biomaterials:50052
+        enabled: true
+      chemistry:
+        url: darwin-plugin-chemistry:50053
+        enabled: false
+    
+    agentic:
+      health_check_interval: 30
+      enable_auto_scaling: true
+      enable_self_healing: true
+

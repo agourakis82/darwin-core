@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: darwin-chromadb
+  namespace: darwin
+  labels:
+    app: darwin-chromadb
+    component: database
+spec:
+  serviceName: darwin-chromadb
+  replicas: 1
+  selector:
+    matchLabels:
+      app: darwin-chromadb
+  template:
+    metadata:
+      labels:
+        app: darwin-chromadb
+        component: database
+    spec:
+      containers:
+      - name: chromadb
+        image: chromadb/chroma:0.5.15
+        ports:
+        - name: http
+          containerPort: 8000
+          protocol: TCP
+        
+        env:
+        - name: IS_PERSISTENT
+          value: "TRUE"
+        - name: PERSIST_DIRECTORY
+          value: "/chroma/data"
+        - name: ANONYMIZED_TELEMETRY
+          value: "FALSE"
+        
+        resources:
+          requests:
+            memory: "4Gi"
+            cpu: "1000m"
+          limits:
+            memory: "8Gi"
+            cpu: "2000m"
+        
+        volumeMounts:
+        - name: chroma-data
+          mountPath: /chroma/data
+        
+        livenessProbe:
+          httpGet:
+            path: /api/v1/heartbeat
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        
+        readinessProbe:
+          httpGet:
+            path: /api/v1/heartbeat
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+  
+  volumeClaimTemplates:
+  - metadata:
+      name: chroma-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 100Gi
+      # storageClassName: local-storage  # Adjust based on your cluster
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: darwin-chromadb
+  namespace: darwin
+  labels:
+    app: darwin-chromadb
+spec:
+  type: ClusterIP
+  clusterIP: None  # Headless for StatefulSet
+  selector:
+    app: darwin-chromadb
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 8000
+

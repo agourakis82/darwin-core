@@ -1,0 +1,244 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: darwin-monitoring
+
+---
+# Prometheus for metrics
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: darwin-monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      containers:
+      - name: prometheus
+        image: prom/prometheus:v2.48.0
+        args:
+        - --config.file=/etc/prometheus/prometheus.yml
+        - --storage.tsdb.path=/prometheus
+        - --web.enable-lifecycle
+        
+        ports:
+        - containerPort: 9090
+        
+        volumeMounts:
+        - name: prometheus-config
+          mountPath: /etc/prometheus
+        - name: prometheus-storage
+          mountPath: /prometheus
+        
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+      
+      volumes:
+      - name: prometheus-config
+        configMap:
+          name: prometheus-config
+      - name: prometheus-storage
+        emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: darwin-monitoring
+spec:
+  selector:
+    app: prometheus
+  ports:
+  - port: 9090
+    targetPort: 9090
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: darwin-monitoring
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+    
+    scrape_configs:
+    - job_name: 'darwin-core'
+      kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+          - darwin
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
+
+---
+# Grafana for visualization
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: darwin-monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+      - name: grafana
+        image: grafana/grafana:10.2.3
+        ports:
+        - containerPort: 3000
+        
+        env:
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          value: "darwin2025"  # Change in production!
+        - name: GF_USERS_ALLOW_SIGN_UP
+          value: "false"
+        
+        volumeMounts:
+        - name: grafana-storage
+          mountPath: /var/lib/grafana
+        
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+      
+      volumes:
+      - name: grafana-storage
+        emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: darwin-monitoring
+spec:
+  type: LoadBalancer
+  selector:
+    app: grafana
+  ports:
+  - port: 3000
+    targetPort: 3000
+
+---
+# Jaeger for distributed tracing
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jaeger
+  namespace: darwin-monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jaeger
+  template:
+    metadata:
+      labels:
+        app: jaeger
+    spec:
+      containers:
+      - name: jaeger
+        image: jaegertracing/all-in-one:1.52
+        
+        ports:
+        - containerPort: 5775
+          protocol: UDP
+        - containerPort: 6831
+          protocol: UDP
+        - containerPort: 6832
+          protocol: UDP
+        - containerPort: 5778
+          protocol: TCP
+        - containerPort: 16686
+          protocol: TCP
+        - containerPort: 14268
+          protocol: TCP
+        - containerPort: 4317  # OTLP gRPC
+          protocol: TCP
+        - containerPort: 4318  # OTLP HTTP
+          protocol: TCP
+        
+        env:
+        - name: COLLECTOR_OTLP_ENABLED
+          value: "true"
+        - name: SPAN_STORAGE_TYPE
+          value: "memory"  # Use Elasticsearch in production
+        
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jaeger-collector
+  namespace: darwin-monitoring
+spec:
+  selector:
+    app: jaeger
+  ports:
+  - name: otlp-grpc
+    port: 4317
+    targetPort: 4317
+  - name: otlp-http
+    port: 4318
+    targetPort: 4318
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jaeger-query
+  namespace: darwin-monitoring
+spec:
+  type: LoadBalancer
+  selector:
+    app: jaeger
+  ports:
+  - port: 16686
+    targetPort: 16686
+    name: ui
+

@@ -1,0 +1,78 @@
+# DARWIN Core 2.0 - Multi-stage Dockerfile
+# Optimized for production deployment
+
+# Stage 1: Build gRPC protos
+FROM python:3.11-slim as proto-builder
+
+RUN pip install --no-cache-dir grpcio-tools==1.60.0
+
+WORKDIR /build
+
+# Copy proto files
+COPY protos/ ./protos/
+
+# Generate Python code from protos
+RUN mkdir -p app/protos && \
+    python3 -m grpc_tools.protoc \
+    -I./protos \
+    --python_out=./app/protos \
+    --grpc_python_out=./app/protos \
+    --pyi_out=./app/protos \
+    protos/kec/v1/kec.proto \
+    protos/plugin/v1/plugin.proto \
+    protos/events/v1/events.proto
+
+# Stage 2: Build dependencies
+FROM python:3.11-slim as deps-builder
+
+WORKDIR /build
+
+# Copy requirements
+COPY requirements-core.txt .
+
+# Install dependencies to user directory
+RUN pip install --user --no-cache-dir -r requirements-core.txt
+
+# Stage 3: Runtime
+FROM python:3.11-slim
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN useradd -m -u 1000 darwin && \
+    mkdir -p /app /data && \
+    chown -R darwin:darwin /app /data
+
+WORKDIR /app
+
+# Copy dependencies from builder
+COPY --from=deps-builder /root/.local /home/darwin/.local
+
+# Copy generated protos
+COPY --from=proto-builder /build/app/protos ./app/protos/
+
+# Copy application code
+COPY app/ ./app/
+
+# Set ownership
+RUN chown -R darwin:darwin /app
+
+# Switch to non-root user
+USER darwin
+
+# Add local bin to PATH
+ENV PATH=/home/darwin/.local/bin:$PATH
+
+# Expose ports
+EXPOSE 8090 50051
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8090/api/v1/health || exit 1
+
+# Start application
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8090", "--workers", "1"]
+

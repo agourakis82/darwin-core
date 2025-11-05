@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package darwin.plugin.v1;
+
+import "google/protobuf/any.proto";
+
+// Generic plugin service interface
+service PluginService {
+  // Get plugin metadata
+  rpc GetMetadata(MetadataRequest) returns (PluginMetadata);
+  
+  // Health check
+  rpc HealthCheck(HealthRequest) returns (HealthResponse);
+  
+  // Execute plugin-specific operation
+  rpc Execute(ExecuteRequest) returns (ExecuteResponse);
+  
+  // Bi-directional streaming for large data
+  rpc StreamData(stream DataChunk) returns (stream DataChunk);
+}
+
+message MetadataRequest {}
+
+message PluginMetadata {
+  string name = 1;
+  string version = 2;
+  bool gpu_required = 3;
+  int64 gpu_memory_mb = 4;
+  repeated string capabilities = 5;
+  string proto_version = 6;  // e.g., "darwin.kec.v1"
+  map<string, string> requirements = 7;  // e.g., {"cuda": "11.8", "python": "3.11"}
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  bool healthy = 1;
+  string status = 2;  // "healthy", "degraded", "unhealthy"
+  map<string, string> details = 3;
+}
+
+message ExecuteRequest {
+  string operation = 1;  // e.g., "analyze", "predict", "train"
+  google.protobuf.Any payload = 2;  // Permite qualquer proto tipado
+  map<string, string> metadata = 3;  // Trace context, auth, etc.
+}
+
+message ExecuteResponse {
+  bool success = 1;
+  google.protobuf.Any result = 2;
+  map<string, string> metrics = 3;  // Performance metrics
+  string error = 4;
+}
+
+message DataChunk {
+  bytes data = 1;
+  int64 sequence = 2;
+  bool is_last = 3;
+  map<string, string> metadata = 4;
+}
+

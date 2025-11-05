@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package darwin.events.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Event schemas for Apache Pulsar
+// Uses Avro schema registry for versioning
+
+message UserInteractionEvent {
+  string user_id = 1;
+  string platform = 2;  // chatgpt, claude, gemini, claude-code
+  string domain = 3;  // biomaterials, chemistry, etc.
+  string query = 4;
+  bool memory_saved = 5;
+  bool search_performed = 6;
+  google.protobuf.Timestamp timestamp = 7;
+  map<string, string> metadata = 8;
+}
+
+message MLTrainingEvent {
+  string model_name = 1;
+  string model_type = 2;  // gnn, transformer, gradient_boosting
+  string status = 3;  // started, progress, completed, failed
+  float progress = 4;  // 0.0 - 1.0
+  map<string, float> metrics = 5;  // loss, accuracy, etc.
+  google.protobuf.Timestamp timestamp = 6;
+}
+
+message PluginHealthEvent {
+  string plugin_name = 1;
+  string status = 2;  // healthy, degraded, unhealthy
+  map<string, string> details = 3;
+  google.protobuf.Timestamp timestamp = 4;
+}
+
+message SystemAlertEvent {
+  string severity = 1;  // info, warning, error, critical
+  string component = 2;  // plugin name or core component
+  string message = 3;
+  map<string, string> context = 4;
+  google.protobuf.Timestamp timestamp = 5;
+}
+
+message ContinuousLearningEvent {
+  string event_type = 1;  // model_updated, profile_updated, training_triggered
+  string user_id = 2;
+  map<string, float> new_preferences = 3;
+  repeated string expertise_areas = 4;
+  google.protobuf.Timestamp timestamp = 5;
+}
+

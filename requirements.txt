@@ -1,0 +1,263 @@
+# Darwin Core 2025 - Requirements
+# Python 3.11+
+
+# =====================================
+# CORE DEPENDENCIES
+# =====================================
+
+# FastAPI + ASGI
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# HTTP/2
+httpx==0.26.0
+h2==4.1.0
+
+# gRPC
+grpcio==1.60.0
+grpcio-tools==1.60.0
+protobuf==4.25.2
+
+# Apache Pulsar
+pulsar-client==3.4.0
+
+# Database/Storage
+chromadb==0.4.22
+qdrant-client==1.7.0
+sentence-transformers==2.2.2
+
+# =====================================
+# AI/ML - ESTADO DA ARTE 2025
+# =====================================
+
+# LLM Frameworks
+langchain==0.1.4
+langchain-openai==0.0.5
+langchain-anthropic==0.0.2
+langgraph==0.0.20
+openai==1.10.0
+anthropic==0.8.1
+
+# Embeddings - Nova Geração
+sentence-transformers==2.3.1
+transformers==4.37.0
+torch==2.1.2
+nomic[local]==2.0.0  # nomic-embed-text-v1.5
+
+# GPU Acceleration
+cupy-cuda11x==12.3.0  # Para CUDA 11.x
+# cupy-cuda12x==12.3.0  # Para CUDA 12.x (alternativa)
+
+# Vector Search
+faiss-gpu==1.7.2  # GPU-accelerated similarity search
+# faiss-cpu==1.7.2  # CPU fallback
+
+# =====================================
+# SCIENTIFIC COMPUTING
+# =====================================
+
+# NetworkX + Graph Analysis
+networkx==3.2.1
+scipy==1.12.0
+numpy==1.26.3
+
+# ML/Stats
+scikit-learn==1.4.0
+pandas==2.2.0
+joblib==1.3.2
+
+# Topological Data Analysis
+gudhi==3.9.0  # Persistent homology
+
+# Curvature (optional - slow)
+# GraphRicciCurvature==0.5.3
+
+# =====================================
+# KUBERNETES & OBSERVABILITY
+# =====================================
+
+# Kubernetes client
+kubernetes==29.0.0
+
+# OpenTelemetry
+opentelemetry-api==1.22.0
+opentelemetry-sdk==1.22.0
+opentelemetry-instrumentation-fastapi==0.43b0
+opentelemetry-instrumentation-grpc==0.43b0
+opentelemetry-exporter-prometheus==0.43b0
+opentelemetry-exporter-otlp==1.22.0
+
+# Prometheus client
+prometheus-client==0.19.0
+
+# =====================================
+# UTILITIES
+# =====================================
+
+# Logging
+loguru==0.7.2
+colorlog==6.8.2
+
+# Async
+aiohttp==3.9.1
+aiofiles==23.2.1
+aiodns==3.1.1
+
+# Validation
+email-validator==2.1.0
+
+# DateTime
+python-dateutil==2.8.2
+pytz==2023.3
+
+# JSON
+orjson==3.9.12  # Faster JSON
+
+# Redis (caching)
+redis[hiredis]==5.0.1
+aioredis==2.0.1
+
+# =====================================
+# DEVELOPMENT
+# =====================================
+
+# Testing
+pytest==7.4.4
+pytest-asyncio==0.23.3
+pytest-cov==4.1.0
+httpx==0.26.0  # For testing async
+
+# Linting
+ruff==0.1.13
+black==23.12.1
+mypy==1.8.0
+
+# Type stubs
+types-redis==4.6.0.20240106
+types-aiofiles==23.2.0.20240106
+
+# =====================================
+# FASE 2 - PRODUCTION LLM SERVING
+# =====================================
+
+# vLLM - Production LLM inference
+vllm==0.3.0  # PagedAttention, continuous batching, 23x throughput
+ray==2.9.0  # Required by vLLM for distributed serving
+
+# Quantization support
+auto-gptq==0.6.0  # GPTQ quantization
+autoawq==0.1.8  # AWQ quantization (recommended for L4)
+
+# Flash Attention (2-4x speedup)
+flash-attn==2.5.2  # Requires CUDA, compile from source if needed
+
+# =====================================
+# FASE 2 - ADVANCED RAG
+# =====================================
+
+# Community detection (GraphRAG)
+python-louvain==0.16  # Leiden/Louvain algorithms
+cdlib==0.3.0  # Community detection library
+
+# Multimodal RAG
+pillow==10.2.0
+colpali==0.2.0  # Document-as-image retrieval
+
+# =====================================
+# FASE 2 - OBSERVABILITY & COST
+# =====================================
+
+# Langfuse - LLM observability
+langfuse==2.6.0  # Production tracing, prompt management
+
+# Cost tracking
+tiktoken==0.5.2  # Token counting (OpenAI)
+
+# =====================================
+# FASE 2 - BIOMATERIALS AI
+# =====================================
+
+# OpenFOAM integration (optional)
+# smartsim==0.6.0  # ML + CFD integration
+
+# Materials GNN
+torch-geometric==2.5.0  # Graph neural networks
+torch-scatter==2.1.2
+torch-sparse==0.6.18
+
+# Medical imaging (optional - large dependencies)
+# monai==1.3.0  # Medical imaging toolkit
+# nibabel==5.2.0  # NIfTI format
+
+# =====================================
+# FASE 2 - NEUROCIÊNCIA (Darwin-Neuro)
+# =====================================
+
+# Brain signal processing (optional - install separately)
+# neurokit2==0.2.7  # Neurophysiological signal processing
+# mne==1.6.0  # M/EEG processing
+# braindecode==0.8.0  # Deep learning for EEG
+# speechbrain==0.5.16  # Speech/brain signals
+
+# =====================================
+# OPTIONAL - ADVANCED FEATURES
+# =====================================
+
+# Multi-agent (AutoGen 0.4)
+# pyautogen==0.2.0  # When officially released
+
+# Event Sourcing (Fase 2)
+# eventsourcing==9.2.23
+
+# Service Mesh (Fase 2)
+# istio-py==0.1.0
+
+# Federated Learning (Fase 3)
+# flower==1.6.0
+# syft==0.8.5
+
+# =====================================
+# DEPLOYMENT
+# =====================================
+
+# WSGI/ASGI
+gunicorn==21.2.0
+
+# Monitoring
+psutil==5.9.7
+
+# Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.6
+
+# =====================================
+# NOTES
+# =====================================
+
+# GPU Requirements:
+# - CUDA 11.x or 12.x
+# - cuDNN 8.x
+# - GPU with compute capability >= 7.0 (Volta+)
+# - Recommended: RTX 4000 ADA or better
+
+# Memory Requirements:
+# - Minimum: 16GB RAM
+# - Recommended: 32GB+ RAM
+# - GPU VRAM: 8GB+ (16GB+ recommended)
+
+# Installation:
+# pip install -r requirements.txt
+
+# For GPU support (choose one):
+# pip install cupy-cuda11x  # CUDA 11.x
+# pip install cupy-cuda12x  # CUDA 12.x
+
+# For production:
+# pip install -r requirements.txt --no-cache-dir
+
+# For development:
+# pip install -r requirements.txt -e .
+

@@ -1,0 +1,73 @@
+# Darwin Core 2025 - Simplified Dockerfile
+# Otimizado para: RAG++, KEC 3.0, Agentic Workflows, MCP Server
+
+# ============================================
+# Stage 1: Build Python Dependencies
+# ============================================
+FROM python:3.11-slim as deps-builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    make \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Copy requirements
+COPY requirements-prod.txt .
+
+# Install dependencies to user directory
+RUN pip install --user --no-cache-dir --no-warn-script-location \
+    -r requirements-prod.txt
+
+# ============================================
+# Stage 2: Runtime Image
+# ============================================
+FROM python:3.11-slim
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    ca-certificates \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Create non-root user
+RUN useradd -m -u 1000 darwin && \
+    mkdir -p /app /data /cache && \
+    chown -R darwin:darwin /app /data /cache
+
+WORKDIR /app
+
+# Copy Python dependencies from builder
+COPY --from=deps-builder --chown=darwin:darwin /root/.local /home/darwin/.local
+
+# Copy application code
+COPY --chown=darwin:darwin app/ ./app/
+
+# Switch to non-root user
+USER darwin
+
+# Add local bin to PATH
+ENV PATH=/home/darwin/.local/bin:$PATH \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app
+
+# Expose ports
+# 8090: FastAPI HTTP (porta padrão Darwin)
+# 8000: FastAPI HTTP (porta nova)
+# 50051: gRPC
+EXPOSE 8090 8000 50051
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8090/health || exit 1
+
+# Default command
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8090", "--workers", "1", "--log-level", "info"]
+

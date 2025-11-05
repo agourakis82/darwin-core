@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudflared
+  namespace: darwin
+  labels:
+    app: cloudflared
+spec:
+  replicas: 2  # HA with 2 tunnels
+  selector:
+    matchLabels:
+      app: cloudflared
+  template:
+    metadata:
+      labels:
+        app: cloudflared
+    spec:
+      containers:
+      - name: cloudflared
+        image: cloudflare/cloudflared:latest
+        
+        args:
+        - tunnel
+        - --no-autoupdate
+        - run
+        - --token
+        - $(TUNNEL_TOKEN)
+        
+        env:
+        - name: TUNNEL_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: cloudflared-secret
+              key: token
+        
+        livenessProbe:
+          httpGet:
+            path: /ready
+            port: 2000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+
+---
+# Secret placeholder (create with actual token)
+# kubectl create secret generic cloudflared-secret --from-literal=token='YOUR_TOKEN' -n darwin
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloudflared-secret
+  namespace: darwin
+type: Opaque
+stringData:
+  token: "REPLACE_WITH_YOUR_TUNNEL_TOKEN"
+

@@ -1,0 +1,294 @@
+syntax = "proto3";
+
+package darwin.physioqm.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// ============================================================================
+// PhysioQM Service - Quantum-Informed PBPK Prediction
+// ============================================================================
+//
+// Multi-scale integration: Quantum → Enzyme → Transporter → Physiology
+//
+// Author: Agourakis
+// Created: 2025-10-31T01:15:00Z
+// Purpose: Real science - mechanistic PBPK prediction
+// Darwin Indexed: Auto-indexed via MCP
+// ============================================================================
+
+service PhysioQMService {
+  // Main prediction endpoint
+  rpc PredictPBPK(PredictRequest) returns (PBPKPredictionResponse);
+  
+  // Feature extraction endpoints (for debugging/inspection)
+  rpc ExtractQuantumFeatures(QuantumRequest) returns (QuantumFeaturesResponse);
+  rpc DockToCYP450(DockingRequest) returns (DockingScoresResponse);
+  rpc PredictTransporters(TransporterRequest) returns (TransporterResponse);
+  rpc GenerateVisualMaps(VisualRequest) returns (VisualMapsResponse);
+  
+  // Interpretation endpoints
+  rpc ExplainPrediction(ExplainRequest) returns (ExplanationResponse);
+  rpc GetAttentionWeights(AttentionRequest) returns (AttentionResponse);
+  
+  // Batch processing (for large datasets)
+  rpc StreamPredictions(stream PredictRequest) returns (stream PBPKPredictionResponse);
+  
+  // Health check
+  rpc HealthCheck(HealthRequest) returns (HealthResponse);
+}
+
+// ============================================================================
+// PREDICTION MESSAGES
+// ============================================================================
+
+message PredictRequest {
+  string smiles = 1;                   // SMILES string
+  string molecule_id = 2;              // Optional ID
+  bool return_features = 3;            // Return extracted features?
+  bool return_interpretation = 4;      // Return attention weights, SHAP?
+  map<string, string> options = 5;    // Advanced options
+}
+
+message PBPKPrediction {
+  // Primary endpoints
+  double fu = 1;                       // Fraction unbound (0-1)
+  double vd = 2;                       // Volume of distribution (L/kg)
+  double clearance = 3;                // Total clearance (mL/min/kg)
+  
+  // Mechanistic breakdown
+  double cl_hepatic = 4;               // Hepatic clearance
+  double cl_renal = 5;                 // Renal clearance
+  double cl_intrinsic = 6;             // Intrinsic clearance (from Well-Stirred)
+  
+  // Uncertainty quantification
+  double fu_std = 7;                   // Std dev (from MC Dropout)
+  double vd_std = 8;
+  double clearance_std = 9;
+  
+  // Confidence scores
+  double confidence = 10;              // Overall confidence (0-1)
+  double applicability_domain = 11;    // Inside training domain? (0-1)
+}
+
+message PBPKPredictionResponse {
+  bool success = 1;
+  PBPKPrediction prediction = 2;
+  QuantumFeatures quantum_features = 3;     // If return_features=true
+  DockingScores docking_scores = 4;
+  TransporterPredictions transporter_preds = 5;
+  Interpretation interpretation = 6;         // If return_interpretation=true
+  string error = 7;
+  map<string, string> metadata = 8;         // Computation time, basis set used, etc
+}
+
+// ============================================================================
+// QUANTUM FEATURES
+// ============================================================================
+
+message QuantumRequest {
+  string smiles = 1;
+  string basis_set = 2;                // "6-31g*", "sto-3g", "auto"
+  string method = 3;                   // "b3lyp", "pbe0", "m06-2x"
+}
+
+message QuantumFeatures {
+  // Frontier molecular orbitals
+  double homo_energy = 1;              // eV
+  double lumo_energy = 2;              // eV
+  double homo_lumo_gap = 3;            // eV
+  
+  // Reactivity descriptors (Parr theory)
+  double chemical_hardness = 4;        // (LUMO - HOMO) / 2
+  double chemical_softness = 5;        // 1 / hardness
+  double electronegativity = 6;        // -(HOMO + LUMO) / 2
+  double electrophilicity_index = 7;   // χ² / (2η)
+  
+  // Fukui indices (reactivity sites)
+  double fukui_electrophilic_max = 8;  // f⁻ (nucleophilic attack site)
+  double fukui_nucleophilic_max = 9;   // f⁺ (electrophilic attack site)
+  double fukui_radical_max = 10;       // f⁰ (radical attack site)
+  double fukui_electrophilic_mean = 11;
+  
+  // Dipole moment
+  double dipole_moment = 12;           // Debye
+  double dipole_x = 13;
+  double dipole_y = 14;
+  double dipole_z = 15;
+  
+  // Ionization and electron affinity
+  double ionization_potential = 16;    // -HOMO (Koopmans)
+  double electron_affinity = 17;       // -LUMO (Koopmans)
+  
+  // Polarizability (if computed)
+  double polarizability_iso = 18;      // Isotropic polarizability (Å³)
+  double polarizability_aniso = 19;    // Anisotropy
+  
+  // Metadata
+  string basis_set_used = 20;
+  int32 scf_cycles = 21;
+  double computation_time = 22;        // seconds
+  bool converged = 23;
+}
+
+message QuantumFeaturesResponse {
+  bool success = 1;
+  QuantumFeatures features = 2;
+  string error = 3;
+}
+
+// ============================================================================
+// ENZYME FEATURES (CYP450 Docking)
+// ============================================================================
+
+message DockingRequest {
+  string smiles = 1;
+  repeated string isoforms = 2;        // ["CYP3A4", "CYP2D6", ...] or empty for all 5
+  int32 n_runs = 3;                    // Docking runs (default: 10)
+}
+
+message CYPDockingScore {
+  string isoform = 1;                  // "CYP3A4", "CYP2D6", etc
+  double binding_energy = 2;           // kcal/mol (most negative = best)
+  double distance_to_heme = 3;         // Å (distance to Fe atom)
+  int32 h_bonds = 4;                   // Number of H-bonds
+  int32 hydrophobic_contacts = 5;      // Number of hydrophobic interactions
+  string binding_mode = 6;             // Description of binding pose
+  double confidence = 7;               // Docking confidence (0-1)
+}
+
+message DockingScores {
+  repeated CYPDockingScore scores = 1; // One per isoform
+  double best_binding_energy = 2;      // Best among all isoforms
+  string best_isoform = 3;             // Which isoform binds best
+  double promiscuity_score = 4;        // How many isoforms bind (0-1)
+  double weighted_score = 5;           // Weighted by isoform expression levels
+}
+
+message DockingScoresResponse {
+  bool success = 1;
+  DockingScores scores = 2;
+  string error = 3;
+  double computation_time = 4;         // seconds
+}
+
+// ============================================================================
+// TRANSPORTER PREDICTIONS
+// ============================================================================
+
+message TransporterRequest {
+  string smiles = 1;
+  repeated string transporters = 2;    // ["Pgp", "OATP1B1", ...] or empty for all
+}
+
+message TransporterPredictions {
+  // Efflux transporters (drug OUT of cells)
+  double pgp_efflux_prob = 1;          // P-glycoprotein / MDR1 (0-1)
+  double bcrp_efflux_prob = 2;         // BCRP / ABCG2
+  double mrp2_efflux_prob = 3;         // MRP2 (biliary)
+  
+  // Uptake transporters (drug INTO cells)
+  double oatp1b1_uptake_prob = 4;      // OATP1B1 (hepatic)
+  double oatp1b3_uptake_prob = 5;      // OATP1B3 (hepatic)
+  double oat1_uptake_prob = 6;         // OAT1 (renal)
+  double oat3_uptake_prob = 7;         // OAT3 (renal)
+  double oct2_uptake_prob = 8;         // OCT2 (renal)
+  
+  // Derived features
+  double efflux_score = 9;             // Combined efflux propensity
+  double uptake_score = 10;            // Combined uptake propensity
+}
+
+message TransporterResponse {
+  bool success = 1;
+  TransporterPredictions predictions = 2;
+  string error = 3;
+}
+
+// ============================================================================
+// VISUAL MAPS
+// ============================================================================
+
+message VisualRequest {
+  string smiles = 1;
+  bool generate_esp = 2;               // Electrostatic potential map
+  bool generate_fukui = 3;             // Fukui reactivity map
+  int32 resolution = 4;                // Image resolution (default: 224)
+}
+
+message VisualMaps {
+  bytes esp_map_png = 1;               // ESP map as PNG (224×224 RGB)
+  bytes fukui_map_png = 2;             // Fukui map as PNG (224×224, 3 channels)
+  
+  // Metadata
+  int32 resolution = 3;
+  string colormap = 4;                 // e.g., "RdBu_r" for ESP
+}
+
+message VisualMapsResponse {
+  bool success = 1;
+  VisualMaps maps = 2;
+  string error = 3;
+  double computation_time = 4;
+}
+
+// ============================================================================
+// INTERPRETATION
+// ============================================================================
+
+message ExplainRequest {
+  string smiles = 1;
+  PBPKPrediction prediction = 2;       // Prediction to explain
+}
+
+message Interpretation {
+  // Feature importance (SHAP values)
+  map<string, double> shap_values = 1; // Feature name → SHAP value
+  
+  // Attention weights
+  map<string, double> attention_quantum = 2;
+  map<string, double> attention_enzyme = 3;
+  map<string, double> attention_transporter = 4;
+  map<string, double> attention_visual = 5;
+  
+  // Mechanistic explanation (plain English)
+  string mechanism_summary = 6;
+  repeated string key_insights = 7;
+  
+  // Visual highlights
+  repeated string important_atoms = 8;     // Atoms with high attention
+  repeated string important_regions = 9;   // Molecular regions (e.g., "benzene ring")
+}
+
+message ExplanationResponse {
+  bool success = 1;
+  Interpretation interpretation = 2;
+  string error = 3;
+}
+
+message AttentionRequest {
+  string smiles = 1;
+}
+
+message AttentionResponse {
+  bool success = 1;
+  bytes attention_heatmap_png = 2;     // Visualization of attention weights
+  map<string, double> attention_weights = 3;
+  string error = 4;
+}
+
+// ============================================================================
+// HEALTH CHECK
+// ============================================================================
+
+message HealthRequest {
+  string component = 1;                // "all", "quantum", "enzyme", "model"
+}
+
+message HealthResponse {
+  bool healthy = 1;
+  string status = 2;                   // "healthy", "degraded", "unhealthy"
+  map<string, string> component_status = 3;
+  map<string, string> metrics = 4;
+  google.protobuf.Timestamp last_check = 5;
+}
+

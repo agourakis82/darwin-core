@@ -1,0 +1,146 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pulsar
+
+---
+# Apache Pulsar - Simplified single-node deployment
+# For production multi-node, use Pulsar Helm chart
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pulsar-config
+  namespace: pulsar
+data:
+  standalone.conf: |
+    # Pulsar standalone configuration
+    zookeeperServers=localhost:2181
+    configurationStoreServers=localhost:2181
+    brokerServicePort=6650
+    webServicePort=8080
+    bindAddress=0.0.0.0
+    advertisedAddress=darwin-pulsar-broker.pulsar.svc.cluster.local
+    clusterName=darwin-cluster
+    managedLedgerDefaultEnsembleSize=1
+    managedLedgerDefaultWriteQuorum=1
+    managedLedgerDefaultAckQuorum=1
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: darwin-pulsar
+  namespace: pulsar
+spec:
+  serviceName: darwin-pulsar-broker
+  replicas: 1
+  selector:
+    matchLabels:
+      app: darwin-pulsar
+  template:
+    metadata:
+      labels:
+        app: darwin-pulsar
+    spec:
+      containers:
+      - name: pulsar
+        image: apachepulsar/pulsar:3.1.2
+        command:
+        - sh
+        - -c
+        - |
+          bin/apply-config-from-env.py conf/standalone.conf && \
+          bin/pulsar standalone --no-functions-worker
+        
+        ports:
+        - name: pulsar
+          containerPort: 6650
+          protocol: TCP
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        
+        env:
+        - name: PULSAR_MEM
+          value: "-Xms4g -Xmx4g"
+        - name: PULSAR_GC
+          value: "-XX:+UseG1GC"
+        
+        resources:
+          requests:
+            memory: "8Gi"
+            cpu: "2000m"
+          limits:
+            memory: "12Gi"
+            cpu: "4000m"
+        
+        volumeMounts:
+        - name: pulsar-data
+          mountPath: /pulsar/data
+        - name: pulsar-config
+          mountPath: /pulsar/conf/standalone.conf
+          subPath: standalone.conf
+        
+        livenessProbe:
+          httpGet:
+            path: /metrics
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        
+        readinessProbe:
+          tcpSocket:
+            port: 6650
+          initialDelaySeconds: 30
+          periodSeconds: 10
+  
+  volumeClaimTemplates:
+  - metadata:
+      name: pulsar-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 50Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: darwin-pulsar-broker
+  namespace: pulsar
+  labels:
+    app: darwin-pulsar
+spec:
+  type: ClusterIP
+  clusterIP: None  # Headless
+  selector:
+    app: darwin-pulsar
+  ports:
+  - name: pulsar
+    port: 6650
+    targetPort: 6650
+  - name: http
+    port: 8080
+    targetPort: 8080
+
+---
+# Regular service for client connections
+apiVersion: v1
+kind: Service
+metadata:
+  name: darwin-pulsar
+  namespace: pulsar
+spec:
+  type: ClusterIP
+  selector:
+    app: darwin-pulsar
+  ports:
+  - name: pulsar
+    port: 6650
+    targetPort: 6650
+  - name: http
+    port: 8080
+    targetPort: 8080
+

@@ -1,0 +1,20 @@
+# Dependências mínimas para Darwin Core funcionar
+fastapi>=0.100.0
+uvicorn[standard]>=0.20.0
+pydantic>=2.0.0
+httpx
+aiofiles
+
+# RAG + Embeddings
+chromadb>=0.4.0
+sentence-transformers
+transformers
+
+# Pulsar (opcional mas necessário pelo código)
+pulsar-client>=3.0.0
+
+# Utilidades
+python-dotenv
+loguru
+tenacity
+

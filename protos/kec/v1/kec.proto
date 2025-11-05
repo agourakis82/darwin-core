@@ -1,0 +1,86 @@
+syntax = "proto3";
+package darwin.kec.v1;
+
+// Resultados KEC 2.0 completos, conforme validação científica
+message KECResults {
+  // Entropia espectral (von Neumann) - MÉTRICA PRINCIPAL
+  double H_spectral = 1;
+  
+  // Curvaturas (Forman e Ollivier–Ricci aproximada)
+  double k_forman_mean = 2;
+  double k_forman_p05  = 3;
+  double k_forman_p95  = 4;
+  double k_ollivier_mean = 5;  // ORC com amostragem 10-30%
+  double k_ollivier_p05  = 6;
+  double k_ollivier_p95  = 7;
+  
+  // Coerência (Small-World)
+  double sigma = 8;  // Humphries & Gurney
+  double phi   = 9;  // Small-World Propensity
+  
+  // Percolação
+  double d_perc_um = 10;  // Diâmetro de percolação
+  
+  // Opcional (gated pelo Adendo)
+  double sigma_Q = 11;  // Coerência "quântica" (feature flag)
+  
+  // Metadados
+  string algorithm_version = 12;
+  int32 processing_time_ms = 13;
+  string random_seed = 14;  // Reprodutibilidade
+  double segmentation_threshold = 15;
+}
+
+// Requisição de análise
+message AnalyzeRequest {
+  string dataset_id = 1;  // Identificador do μCT dataset
+  map<string,string> options = 2;  // Ex: edge_weight_method, sampling_ratio
+  bool include_ollivier_ricci = 3;  // Default: true
+  bool include_quantum_coherence = 4;  // Default: false (feature flag)
+}
+
+// Resposta de análise para scaffold único
+message ScaffoldAnalysisResponse {
+  bool success = 1;
+  KECResults kec = 2;
+  map<string,string> meta = 3;  // Tempos, versões, seeds
+  string error_message = 4;
+}
+
+// Chunk de dados para streaming (μCT grande)
+message DataChunk {
+  bytes data = 1;
+  int32 chunk_index = 2;
+  int32 total_chunks = 3;
+  string dataset_id = 4;
+}
+
+// Chunk processado (streaming response)
+message ProcessedChunk {
+  int32 chunk_index = 1;
+  double progress_percent = 2;
+  string status_message = 3;
+}
+
+// Health check
+message HealthCheckRequest {
+  string plugin_id = 1;
+}
+
+message HealthCheckResponse {
+  bool healthy = 1;
+  string status_message = 2;
+  map<string, string> metrics = 3;
+}
+
+// Serviço KEC
+service KECService {
+  // Análise única (síncrona)
+  rpc Analyze(AnalyzeRequest) returns (ScaffoldAnalysisResponse);
+  
+  // Streaming bi-direcional para datasets grandes
+  rpc StreamData(stream DataChunk) returns (stream ProcessedChunk);
+  
+  // Health check
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
