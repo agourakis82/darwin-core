@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: darwin-core-config
+  namespace: darwin-core
+  labels:
+    app: darwin-core
+data:
+  # Application config
+  LOG_LEVEL: "INFO"
+  ENVIRONMENT: "production"
+  
+  # Darwin ecosystem
+  DARWIN_CLUSTER_ENABLED: "true"
+  DARWIN_AGENTS_ENABLED: "true"
+  DARWIN_MEMORY_ENABLED: "true"
+  
+  # Services
+  PULSAR_ENABLED: "true"
+  PULSAR_URL: "pulsar://pulsar.darwin-core.svc.cluster.local:6650"
+  
+  QDRANT_ENABLED: "true"
+  QDRANT_HOST: "qdrant.darwin-core.svc.cluster.local"
+  QDRANT_PORT: "6333"
+  
+  REDIS_ENABLED: "true"
+  REDIS_HOST: "redis.darwin-core.svc.cluster.local"
+  REDIS_PORT: "6379"
+  
+  # RAG++ config
+  RAG_DEFAULT_MODEL: "jina-v3"
+  RAG_ENABLE_GRAPHRAG: "true"
+  RAG_ENABLE_SELFRAG: "true"
+  
+  # Multi-AI config
+  MULTI_AI_ENABLED: "true"
+  MULTI_AI_ROUTING: "intelligent"
+  
+  # Observability
+  OTEL_ENABLED: "true"
+  OTEL_ENDPOINT: "otel-collector.monitoring.svc.cluster.local:4317"
+  
+  PROMETHEUS_ENABLED: "true"
+  PROMETHEUS_PORT: "9090"
+

@@ -1,0 +1,23 @@
+{
+  "last_update": "2025-11-05T19:30:00-03:00",
+  "active_agents": [],
+  "locks": {},
+  "last_actions": [
+    {
+      "action": "initial_setup",
+      "description": "Darwin Core v2.0.0 with best practices 2025",
+      "timestamp": "2025-11-05T19:30:00-03:00",
+      "agent_id": "cursor_agent",
+      "files_modified": [
+        ".darwin/",
+        "kubernetes/",
+        "docs/",
+        ".github/workflows/"
+      ]
+    }
+  ],
+  "version": "1.0.0",
+  "repository": "darwin-core",
+  "doi": "10.5281/zenodo.17537549"
+}
+
